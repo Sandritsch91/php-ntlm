@@ -1,7 +1,9 @@
 <?php
+
 declare(strict_types=1);
+
 /**
- * Contains \JamesIArmes\PhpNtlm\NTLMSoapClient
+ * Contains \jamesiarmes\PhpNtlm\SoapClient
  */
 
 namespace jamesiarmes\PhpNtlm;
@@ -16,29 +18,27 @@ use CurlHandle;
 class SoapClient extends \SoapClient
 {
     /**
-     * cURL resource used to make the SOAP request
-     *
-     * @var resource|false|CurlHandle
+     * cURL handle used to make the SOAP request.
      */
-    protected $ch;
+    protected ?CurlHandle $ch = null;
 
     /**
      * Options passed to the client constructor.
      */
     protected array $options;
 
-	private string $__last_request;
+    private ?string $__last_request = null;
 
-	/**
-	 * @var string[]
-	 */
-	private array $__last_request_headers;
+    /**
+     * @var string[]|null
+     */
+    private ?array $__last_request_headers = null;
 
-	private string|false $__last_response;
+    private ?string $__last_response = null;
 
-	private string|false $__last_response_headers;
+    private ?string $__last_response_headers = null;
 
-	/**
+    /**
      * {@inheritdoc}
      *
      * Additional options:
@@ -58,13 +58,13 @@ class SoapClient extends \SoapClient
     public function __construct(?string $wsdl, array $options = [])
     {
         // Set missing indexes to their default value.
-        $options += array(
+        $options += [
             'user' => null,
             'password' => null,
-            'curlopts' => array(),
+            'curlopts' => [],
             'strip_bad_chars' => true,
             'warn_on_bad_chars' => false,
-        );
+        ];
         $this->options = $options;
 
         // Verify that a user name and password were entered.
@@ -79,34 +79,47 @@ class SoapClient extends \SoapClient
 
     /**
      * {@inheritdoc}
+     *
+     * The $uriParserClass parameter was added to \SoapClient::__doRequest() in
+     * PHP 8.5. It is accepted here for signature compatibility but unused, as
+     * the request is made through cURL.
      */
-    public function __doRequest(string $request, string $location, string $action, int $version, bool $oneWay = false): ?string
-	{
+    public function __doRequest(
+        string $request,
+        string $location,
+        string $action,
+        int $version,
+        bool $oneWay = false,
+        ?string $uriParserClass = null
+    ): ?string {
         $headers = $this->buildHeaders($action);
         $this->__last_request = $request;
         $this->__last_request_headers = $headers;
 
         // Only reinitialize curl handle if the location is different.
-        if (!$this->ch
-            || curl_getinfo($this->ch, CURLINFO_EFFECTIVE_URL) != $location) {
-            $this->ch = curl_init($location);
+        if ($this->ch === null
+            || curl_getinfo($this->ch, CURLINFO_EFFECTIVE_URL) !== $location) {
+            $handle = curl_init($location);
+            if ($handle === false) {
+                throw new \RuntimeException('Unable to initialize cURL.');
+            }
+            $this->ch = $handle;
         }
 
         curl_setopt_array($this->ch, $this->curlOptions($action, $request));
         $response = curl_exec($this->ch);
 
-        // TODO: Add some real error handling.
-        // If the response if false than there was an error and we should throw
-        // an exception.
+        // If the response is false then there was an error and we should
+        // throw an exception.
         if ($response === false) {
-            $this->__last_response = $this->__last_response_headers = false;
+            $this->__last_response = $this->__last_response_headers = null;
             throw new \RuntimeException(
                 'Curl error: ' . curl_error($this->ch),
                 curl_errno($this->ch)
             );
         }
 
-        $this->parseResponse($response);
+        $this->parseResponse((string)$response);
         $this->cleanResponse();
 
         return $this->__last_response;
@@ -115,9 +128,37 @@ class SoapClient extends \SoapClient
     /**
      * {@inheritdoc}
      */
+    public function __getLastRequest(): ?string
+    {
+        return $this->__last_request;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function __getLastRequestHeaders(): ?string
-	{
+    {
+        if ($this->__last_request_headers === null) {
+            return null;
+        }
+
         return implode("\n", $this->__last_request_headers) . "\n";
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function __getLastResponse(): ?string
+    {
+        return $this->__last_response;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function __getLastResponseHeaders(): ?string
+    {
+        return $this->__last_response_headers;
     }
 
     /**
@@ -127,39 +168,41 @@ class SoapClient extends \SoapClient
      *   If no cURL resource has been initialized.
      */
     public function getResponseCode(): int
-	{
-        if (empty($this->ch)) {
+    {
+        if ($this->ch === null) {
             throw new \BadMethodCallException('No cURL resource has been '
-                . 'initialized. This is probably because no request has not '
+                . 'initialized. This is probably because no request has '
                 . 'been made.');
         }
 
-        return curl_getinfo($this->ch, CURLINFO_HTTP_CODE);
+        return (int)curl_getinfo($this->ch, CURLINFO_HTTP_CODE);
     }
 
     /**
      * Builds the headers for the request.
+     *
+     * @return string[]
      */
     protected function buildHeaders(string $action): array
-	{
-        return array(
+    {
+        return [
             'Method: POST',
             'Connection: Keep-Alive',
             'User-Agent: PHP-SOAP-CURL',
             'Content-Type: text/xml; charset=utf-8',
             "SOAPAction: \"$action\"",
             'Expect: 100-continue',
-        );
+        ];
     }
 
     /**
      * Cleans the response body by stripping bad characters if instructed to.
      */
-    protected function cleanResponse()
+    protected function cleanResponse(): void
     {
-        // If the option to strip bad characters is not set, then we shouldn't
-        // do anything here.
-        if (!$this->options['strip_bad_chars']) {
+        // If the option to strip bad characters is not set, or there is no
+        // response, then we shouldn't do anything here.
+        if (!$this->options['strip_bad_chars'] || $this->__last_response === null) {
             return;
         }
 
@@ -187,16 +230,16 @@ class SoapClient extends \SoapClient
      * Builds an array of curl options for the request
      */
     protected function curlOptions(string $action, string $request): array
-	{
-        $options = $this->options['curlopts'] + array(
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => $this->buildHeaders($action),
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_HTTPAUTH => CURLAUTH_BASIC | CURLAUTH_NTLM,
-            CURLOPT_USERPWD => $this->options['user'] . ':'
-                               . $this->options['password'],
-        );
+    {
+        $options = $this->options['curlopts'] + [
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => $this->buildHeaders($action),
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_HTTPAUTH => CURLAUTH_BASIC | CURLAUTH_NTLM,
+                CURLOPT_USERPWD => $this->options['user'] . ':'
+                    . $this->options['password'],
+            ];
 
         // We shouldn't allow these options to be overridden.
         $options[CURLOPT_HEADER] = true;
@@ -207,20 +250,16 @@ class SoapClient extends \SoapClient
     }
 
     /**
-     * Pareses the response from a successful request.
+     * Parses the response from a successful request.
      *
      * @param string $response
      *   The response from the cURL request, including headers and body.
      */
-    public function parseResponse(string $response)
+    public function parseResponse(string $response): void
     {
         // Parse the response and set the last response and headers.
-        $info = curl_getinfo($this->ch);
-        $this->__last_response_headers = substr(
-            $response,
-            0,
-            $info['header_size']
-        );
-        $this->__last_response = substr($response, $info['header_size']);
+        $headerSize = (int)curl_getinfo($this->ch, CURLINFO_HEADER_SIZE);
+        $this->__last_response_headers = substr($response, 0, $headerSize);
+        $this->__last_response = substr($response, $headerSize);
     }
 }

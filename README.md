@@ -12,7 +12,7 @@ Dependencies
 ------------
 
  * Composer
- * PHP 8.1
+ * PHP 8.1 - 8.5
  * cURL with NTLM support (7.23.0+ recommended)
 
 Installation
@@ -24,7 +24,7 @@ handle autoloading of classes.
 ```json
 {
     "require": {
-        "jamesiarmes/php-ntlm": "~1.0"
+        "sandritsch91/php-ntlm": "~1.0"
     }
 }
 ```

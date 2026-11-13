@@ -1,11 +1,16 @@
 {
-  "name": "jamesiarmes/php-ntlm",
+  "name": "sandritsch91/php-ntlm",
   "description": "Library for communicating with Microsoft services using NTLM authentication.",
   "license": "MIT",
+  "homepage": "https://github.com/Sandritsch91/php-ntlm",
   "authors": [
     {
       "name": "James Armes",
       "email": "jamesiarmes@gmail.com"
+    },
+    {
+      "name": "Sandritsch91",
+      "homepage": "https://github.com/Sandritsch91"
     }
   ],
   "prefer-stable": true,
@@ -13,6 +18,9 @@
     "php": ">=8.1",
     "ext-soap": "*",
     "ext-curl": "*"
+  },
+  "replace": {
+    "jamesiarmes/php-ntlm": "self.version"
   },
   "config": {
     "bin-dir": "bin"
